@@ -102,6 +102,11 @@ ANTHROPIC_API_KEY=sk-ant-your-key-here
 The `example.py` script guides you through the entire setup process:
 
 ```bash
+# Recommended: Using uv run (automatically uses virtual environment)
+uv run python example.py
+
+# Alternative: Activate venv first, then run
+source .venv/bin/activate
 python example.py
 ```
 
@@ -114,6 +119,8 @@ This script will:
 5. 📋 Explain all available usage options
 
 The script handles all the details—just follow the prompts!
+
+**Note:** You need to run this within the virtual environment. Using `uv run` is the easiest approach as it automatically handles the virtual environment without requiring manual activation.
 
 ### Clearing the Database and Starting Fresh
 
@@ -332,16 +339,21 @@ When detected, they're automatically indexed.
 
 ## � Running Commands
 
-After installing with `uv pip install -e .`, you can use these commands:
+After installing with `uv pip install -e .`, you can use these commands.
+
+**Note:** All commands should be run using `uv run` to automatically use the virtual environment, or activate the virtual environment first with `source .venv/bin/activate`.
 
 ### Running the MCP Server
 
 ```bash
-# Using the command alias
-financial-mcp
+# Using uv run (recommended - no activation needed)
+uv run python -m financial_rag.mcp_server
 
-# Or using Python module syntax
+# Or directly if venv is activated
 python -m financial_rag.mcp_server
+
+# Or using the installed command alias
+financial-mcp
 ```
 
 The MCP server will start and listen for connections from Claude Desktop.
@@ -349,24 +361,33 @@ The MCP server will start and listen for connections from Claude Desktop.
 ### Running the CLI
 
 ```bash
-# Interactive CLI for querying documents
-financial-rag
+# Using uv run (recommended - no activation needed)
+uv run python -m financial_rag.rag_pipeline
 
-# Or using Python module syntax
+# Or directly if venv is activated
 python -m financial_rag.rag_pipeline
+
+# Or using the installed command alias
+financial-rag
 ```
+
+Interactive CLI for querying documents.
 
 ### Running the File Watcher
 
 ```bash
-# Watch default OneDrive location
-financial-watcher
+# Using uv run (recommended - no activation needed)
+uv run python -m financial_rag.file_watcher
 
-# Or watch a custom path
-financial-watcher "/your/custom/path"
+# Or with a custom path
+uv run python -m financial_rag.file_watcher "~/OneDrive/Documents/Finance/Financial History"
 
-# Or using Python module syntax
+# Or directly if venv is activated
 python -m financial_rag.file_watcher "/your/custom/path"
+
+# Or using the installed command alias
+financial-watcher
+financial-watcher "/your/custom/path"
 ```
 
 ## �📊 Available MCP Tools

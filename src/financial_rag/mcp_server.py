@@ -21,9 +21,7 @@ from mcp.server.fastmcp import FastMCP
 load_dotenv()
 
 # Initialize the MCP server
-mcp = FastMCP(
-    "Financial RAG Server", description="Query your personal financial documents using AI"
-)
+mcp = FastMCP("Financial RAG Server")
 
 # Lazy initialization of RAG (to avoid slow startup)
 _rag_instance = None

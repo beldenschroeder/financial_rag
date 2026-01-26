@@ -104,9 +104,10 @@ def main():
         print()
 
         example_queries = [
-            "What are the most recent expenses recorded?",
-            "Summarize my income sources",
-            "What categories do my expenses fall into?",
+            "What are the most recent personal expenses recorded?",
+            "Summarize my personal income sources",
+            "What categories do my personal expenses fall into?",
+            "What categories do my family expenses fall into?",
         ]
 
         for i, query in enumerate(example_queries, 1):

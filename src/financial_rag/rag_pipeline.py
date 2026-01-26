@@ -258,17 +258,32 @@ class FinancialRAG:
             "source_file": pdf_path.name,
             "source_path": str(pdf_path),
             "document_type": "unknown",
+            "document_category": "unknown",  # "family" or "personal"
             "year": "unknown",
             "month": "unknown",
             "date": "unknown",
         }
 
-        # Determine document type
+        # Determine document category (family vs personal) - default to personal if not specified
         filename_lower = filename.lower()
-        if "expense" in filename_lower:
-            metadata["document_type"] = "expenses"
-        elif "income" in filename_lower:
+        if "family" in filename_lower:
+            metadata["document_category"] = "family"
+        else:
+            metadata["document_category"] = "personal"
+
+        # Determine document type(s)
+        # Note: "Income Statement" contains both income (gains) and expenses (losses)
+        has_income = "income" in filename_lower
+        has_expense = "expense" in filename_lower or "loss" in filename_lower
+
+        if has_income and has_expense:
+            metadata["document_type"] = "income,expenses"
+        elif has_income:
             metadata["document_type"] = "income"
+        elif has_expense:
+            metadata["document_type"] = "expenses"
+        else:
+            metadata["document_type"] = "unknown"
 
         # Extract date from filename (format: YYYY-MM-DD)
         date_match = re.search(r"(\d{4})-(\d{2})-(\d{2})", filename)
@@ -308,19 +323,29 @@ class FinancialRAG:
 finance documents. Your job is to answer questions about the user's expenses,
 income, and financial history based on the provided context.
 
+IMPORTANT: Document Structure and Dates
+- All documents are named with dates in YYYY-MM-DD format (e.g., "Expenses 2025-01-15.pdf")
+- Parent folders contain years like "Financial History (2025)"
+- Documents are categorized as either "family" or "personal" (defaults to personal if not specified)
+- "Income Statement" documents contain both income (gains) and expenses (losses)
+- Document types include: "expenses", "income", or "income,expenses"
+- When answering about recent data, prioritize documents with more recent dates
+
 Guidelines:
 - Only use information from the provided context
 - If the context doesn't contain enough information, say so clearly
 - Be specific with numbers and dates when available
+- Pay attention to document metadata (dates, categories) to give accurate timeframes
+- Distinguish between family and personal finances when relevant
 - Organize your response clearly, especially for comparisons
-- If asked about trends, analyze patterns across multiple documents
+- If asked about trends, analyze patterns across multiple documents with attention to dates
 
 Context from financial documents:
 {context}
 """
 
         # Create prompt template
-        prompt = ChatPromptTemplate.from_messages(
+        prompt = ChatPromptTemplate.from_messages(  # type: ignore
             [
                 SystemMessagePromptTemplate.from_template(system_prompt),
                 HumanMessagePromptTemplate.from_template("{question}"),
@@ -334,8 +359,8 @@ Context from financial documents:
         context = "\n\n".join([doc.page_content for doc in retrieved_docs])  # type: ignore
 
         # Create and invoke the chain
-        chain = (
-            {"context": lambda x: context, "question": lambda x: question}
+        chain = (  # type: ignore
+            {"context": lambda x: context, "question": lambda x: question}  # type: ignore
             | prompt
             | self.llm
             | StrOutputParser()
