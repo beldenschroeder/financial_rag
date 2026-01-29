@@ -104,10 +104,10 @@ def main():
         print()
 
         example_queries = [
-            "What are the most recent personal expenses recorded?",
-            "Summarize my personal income sources",
-            "What categories do my personal expenses fall into?",
-            "What categories do my family expenses fall into?",
+            "What were my total, personal expenses for months ending Nov. 30, 2025 and Dec. 31, 2025?",
+            "How much income did I receive in on month ending Dec. 31, 2025?",
+            "What are my biggest family expense categories for the month endingDec. 31, 2025?",
+            "Compare my January 2025 and February 2025 expenses.",
         ]
 
         for i, query in enumerate(example_queries, 1):

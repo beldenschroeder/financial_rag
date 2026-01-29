@@ -324,12 +324,18 @@ finance documents. Your job is to answer questions about the user's expenses,
 income, and financial history based on the provided context.
 
 IMPORTANT: Document Structure and Dates
-- All documents are named with dates in YYYY-MM-DD format (e.g., "Expenses 2025-01-15.pdf")
+- All documents are named with dates in YYYY-MM-DD format (e.g., "Family Expenses 2025-11-30.pdf" and "Income Statement 2025-01-31.pdf)
+- Each document only reflects data for the month ending in the year, month, and day in the filename
 - Parent folders contain years like "Financial History (2025)"
-- Documents are categorized as either "family" or "personal" (defaults to personal if not specified)
+- Parent folders show the year the documents belong to of when year the data pertains to
+- Documents are categorized as either "family" or "personal" (defaults to personal if file name does not specify, "Personal")
+- "Family" documents have the word "Family" in the filename
+- An example of "family" document: "Family Expenses 2025-11-30.pdf"
+- An example of "personal" document: "Income Statement 2025-01-31.pdf"
 - "Income Statement" documents contain both income (gains) and expenses (losses)
+- "Income Statement" and "Family Expenses" documents have columns with titles containing "Projected". These are not actual amounts. Actual amount, current ammounts are found in the column with no title.
 - Document types include: "expenses", "income", or "income,expenses"
-- When answering about recent data, prioritize documents with more recent dates
+- When answering about recent data, prioritize documents with more recent dates (see filenames and metadata)
 
 Guidelines:
 - Only use information from the provided context
@@ -339,6 +345,10 @@ Guidelines:
 - Distinguish between family and personal finances when relevant
 - Organize your response clearly, especially for comparisons
 - If asked about trends, analyze patterns across multiple documents with attention to dates
+- Some calculations asked may require gathering data from multiple documents
+- Don't use the creation or modification date of the PDF files to determine the data the financial data pertains to.
+- Use only the dates found in the parent folder names and the PDF filenames to determine the date the financial data pertains to.
+- The PDF files give column names and row names to explain what data you are analyzing.
 
 Context from financial documents:
 {context}
@@ -352,8 +362,15 @@ Context from financial documents:
             ]
         )  # type: ignore
 
-        # Retrieve relevant documents
-        retrieved_docs = self.retriever.invoke(question)  # type: ignore
+        # Extract temporal and categorical information from the question
+        years_in_question = self._extract_years_from_question(question)
+        months_days = self._extract_months_days_from_question(question)
+        doc_preferences = self._extract_document_preferences(question)
+
+        # Retrieve relevant documents with temporal and category-aware filtering
+        retrieved_docs = self._retrieve_with_priority(
+            question, years_in_question, months_days, doc_preferences
+        )
 
         # Format context from documents
         context = "\n\n".join([doc.page_content for doc in retrieved_docs])  # type: ignore
@@ -390,6 +407,258 @@ Context from financial documents:
         )  # type: ignore
         print(f"✅ Found {len(retrieved_docs)} relevant chunks")  # type: ignore
         return response
+
+    def _extract_years_from_question(self, question: str) -> list[str]:
+        """
+        Extract years mentioned in the question (e.g., "2025", "2024").
+
+        Args:
+            question: The user's question
+
+        Returns:
+            List of years found in the question
+        """
+        # Find all 4-digit numbers that look like years (2000-2099)
+        years_found = re.findall(r"\b(20\d{2})\b", question)
+        return list(set(years_found))  # Remove duplicates
+
+    def _extract_months_days_from_question(self, question: str) -> dict:  # type: ignore
+        """
+        Extract months and days mentioned in the question.
+        Looks for month names (January, Feb, etc.) and day numbers.
+        Each file represents data for the month ending on that specific day.
+
+        Args:
+            question: The user's question
+
+        Returns:
+            Dictionary with 'months' and 'days' keys containing lists of integers
+        """
+        question_lower = question.lower()
+        month_names = {
+            "january": 1,
+            "february": 2,
+            "march": 3,
+            "april": 4,
+            "may": 5,
+            "june": 6,
+            "july": 7,
+            "august": 8,
+            "september": 9,
+            "october": 10,
+            "november": 11,
+            "december": 12,
+            "jan": 1,
+            "feb": 2,
+            "mar": 3,
+            "apr": 4,
+            "jun": 6,
+            "jul": 7,
+            "aug": 8,
+            "sep": 9,
+            "oct": 10,
+            "nov": 11,
+            "dec": 12,
+        }
+
+        months_found = []
+        for month_name, month_num in month_names.items():
+            if month_name in question_lower:
+                months_found.append(month_num)
+
+        # Look for day numbers (1-31) in patterns like "ending 31" or "month ending"
+        days_found = []
+
+        # Look for "ending <day>" pattern (e.g., "ending 31")
+        day_match = re.search(r"ending\s+(\d{1,2})(?:[a-z]{2})?\b", question_lower)
+        if day_match:
+            days_found.append(int(day_match.group(1)))
+
+        # Look for "ending <month name>" pattern and infer last day of month
+        for month_name, month_num in month_names.items():
+            if re.search(rf"ending\s+{month_name}\b", question_lower):
+                # Add a flag for month-ending (days 28-31)
+                days_found.append(0)  # 0 means "month-ending documents"
+                break
+
+        # Also match "month ending" with implicit last day (28-31)
+        if re.search(r"month\s+ending", question_lower):
+            # This means they want month-end data, which would be days 28-31
+            # We'll use this as a flag to prioritize documents that represent month-end
+            days_found.append(0)  # 0 means "month-ending documents"
+
+        return {"months": list(set(months_found)), "days": list(set(days_found))}  # type: ignore
+
+    def _extract_document_preferences(self, question: str) -> dict:  # type: ignore
+        """
+        Extract preferences about document type and category from the question.
+        Determines if looking for family/personal, expenses/income, etc.
+
+        Important:
+        - If "family" in question, prioritize family documents
+        - If "personal" in question OR not "family", also include income statements
+        - Income statements contain both gains (income) and losses (expenses)
+        - Personal expenses should match non-family documents
+
+        Args:
+            question: The user's question
+
+        Returns:
+            Dictionary with preferences: is_family, is_personal, wants_expenses, wants_income
+        """
+        question_lower = question.lower()
+
+        return {  # type: ignore
+            "is_family": "family" in question_lower,
+            "is_personal": "personal" in question_lower,
+            "wants_expenses": any(
+                word in question_lower for word in ["expense", "spent", "cost", "spending", "loss"]
+            ),
+            "wants_income": any(
+                word in question_lower for word in ["income", "earn", "received", "revenue", "gain"]
+            ),
+        }  # type: ignore
+
+    def _retrieve_with_priority(  # type: ignore
+        self,
+        question: str,
+        years: list[str],
+        months_days: dict,  # type: ignore
+        preferences: dict,  # type: ignore
+    ) -> list:  # type: ignore
+        """
+        Retrieve documents with priority given to years, months, days, and document type preferences.
+
+        Matching strategy:
+        1. Year filter (required if years specified)
+        2. Month/day filter (prioritize month-end documents if requested)
+        3. Category filter (family vs personal, expenses vs income)
+        4. Fallback to semantic search if no matches
+
+        Args:
+            question: The user's question
+            years: List of years extracted from the question
+            months_days: Dict with 'months' and 'days' lists
+            preferences: Dict with document type preferences (is_family, wants_expenses, etc.)
+
+        Returns:
+            List of relevant document chunks
+        """
+        import chromadb
+        from langchain_core.documents import Document
+
+        if not years:
+            # No specific year mentioned, return standard results
+            return self.retriever.invoke(question)  # type: ignore
+
+        # Get all documents and apply filters
+        db = chromadb.PersistentClient(path=self.persist_directory)
+        collection = db.get_collection("financial_documents")
+
+        # Embed the question for semantic search
+        query_embedding = self.embeddings.embed_query(question)
+
+        # Get more initial results to filter through
+        # Get up to 300 to ensure documents with specified year/month/day are included
+        # (semantic search may not rank them highly since it doesn't understand dates well)
+        all_docs_result = collection.query(
+            query_embeddings=[query_embedding],
+            n_results=300,
+            include=["metadatas", "documents", "distances"],
+        )
+
+        # Extract data from results
+        metadatas = all_docs_result["metadatas"][0] if all_docs_result["metadatas"] else []  # type: ignore
+        documents = all_docs_result["documents"][0] if all_docs_result["documents"] else []  # type: ignore
+        distances = all_docs_result["distances"][0] if all_docs_result["distances"] else []  # type: ignore
+
+        filtered_docs: list = []  # type: ignore
+        for meta, doc_text, distance in zip(metadatas, documents, distances):  # type: ignore
+            # Filter by year (required)
+            if meta.get("year") not in years:  # type: ignore
+                continue
+
+            # Check month/day filters (only apply if specified)
+            months_specified = months_days.get("months", [])  # type: ignore
+            days_specified = months_days.get("days", [])  # type: ignore
+
+            # Only apply month/day filtering if they were actually mentioned in the question
+            if months_specified or days_specified:
+                doc_month = int(meta.get("month", 0)) if meta.get("month") != "unknown" else 0  # type: ignore
+                doc_day = (
+                    int(meta.get("date", "").split("-")[2]) if meta.get("date") != "unknown" else 0
+                )  # type: ignore
+
+                # If months are specified, document month must match
+                if months_specified and doc_month not in months_specified:  # type: ignore
+                    continue
+
+                # If days are specified, check if document day matches
+                if days_specified:
+                    # 0 means "month-ending documents" (days 28-31)
+                    if 0 in days_specified:  # type: ignore
+                        if doc_day < 28:  # type: ignore
+                            continue
+                    elif doc_day not in days_specified:  # type: ignore
+                        # Exact day match required if specific day(s) mentioned
+                        continue
+
+            # Check document category preferences
+            is_family = preferences.get("is_family", False)  # type: ignore
+            is_personal = preferences.get("is_personal", False)  # type: ignore
+            wants_expenses = preferences.get("wants_expenses", False)  # type: ignore
+            wants_income = preferences.get("wants_income", False)  # type: ignore
+
+            doc_category = meta.get("document_category", "personal")  # type: ignore
+            doc_type = meta.get("document_type", "unknown")  # type: ignore
+
+            # Family documents only have "Family Expenses" in the name
+            # Personal items include both Income Statements (which have income AND expenses)
+            # If asking for family, exclude non-family documents
+            if is_family and doc_category != "family":  # type: ignore
+                continue
+
+            # If asking for personal and not asking for family, exclude family docs
+            # OR if not mentioning family at all, include income statements too
+            if (is_personal or not is_family) and doc_category == "family":  # type: ignore
+                # Allow family if also wanting expenses (they may still be relevant)
+                if not wants_expenses:  # type: ignore
+                    continue
+
+            # Type matching for expenses vs income
+            # Income statements contain both, so they match either query
+            # Family Expenses only have expenses
+            if wants_expenses and "expense" not in doc_type and doc_category != "family":  # type: ignore
+                # Income statements are OK for expense queries (contain losses/expenses)
+                if "income" not in doc_type:  # type: ignore
+                    continue
+
+            if wants_income and "income" not in doc_type:  # type: ignore
+                continue
+
+            # Document passed all filters, add it
+            doc = Document(page_content=doc_text, metadata=meta)  # type: ignore
+            filtered_docs.append((doc, distance))  # type: ignore
+
+        # If we found matching documents, return top 5 sorted by relevance
+        if filtered_docs:
+            filtered_docs.sort(key=lambda x: x[1])  # type: ignore
+            return [doc for doc, _ in filtered_docs[:5]]  # type: ignore
+
+        # Fallback: return top semantic matches if no filters matched anything
+        # This prevents empty results when filters are too restrictive
+        fallback_docs: list = []  # type: ignore
+        for meta, doc_text in zip(metadatas, documents):  # type: ignore
+            # At least match the year
+            if meta.get("year") in years:  # type: ignore
+                doc = Document(page_content=doc_text, metadata=meta)  # type: ignore
+                fallback_docs.append(doc)  # type: ignore
+
+        return (
+            fallback_docs[:5]
+            if fallback_docs
+            else (self.retriever.invoke(question) if self.retriever else [])
+        )  # type: ignore
 
     def get_stats(self) -> StatsDict:
         """
@@ -452,10 +721,10 @@ def main():
 
     # Example queries
     example_queries = [
-        "What were my total expenses last month?",
-        "How much income did I receive in 2024?",
-        "What are my biggest expense categories?",
-        "Compare my January and February expenses",
+        "What were my total, personal expenses for months ending Nov. 30, 2025 and Dec. 31, 2025?",
+        "How much income did I receive in on month ending Dec. 31, 2025?",
+        "What are my biggest family expense categories for the month endingDec. 31, 2025?",
+        "Compare my January 2025 and February 2025 expenses.",
     ]
 
     print("💡 Example queries you can try:")
