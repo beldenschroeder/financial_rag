@@ -9,8 +9,9 @@ A RAG system for querying personal financial PDF documents using:
 
 import os
 import re
+from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import TypedDict, cast
+from typing import Any, TypedDict, cast
 
 from dotenv import load_dotenv
 from langchain_anthropic import ChatAnthropic
@@ -43,7 +44,255 @@ class QueryResponseDict(TypedDict):
     sources: list[dict[str, str]]
 
 
-class FinancialRAG:
+# ============================================================================
+# QUESTION ANALYSIS - Single Responsibility: Parse user questions
+# ============================================================================
+
+
+class QuestionAnalyzer:
+    """Extracts temporal and categorical information from user questions."""
+
+    def analyze(self, question: str) -> dict[str, Any]:
+        """Parse question to extract structured information."""
+        return {
+            "years": self._extract_years(question),
+            "months_days": self._extract_months_days(question),
+            "preferences": self._extract_preferences(question),
+        }
+
+    def _extract_years(self, question: str) -> list[str]:
+        """Extract years mentioned in the question (e.g., "2025", "2024")."""
+        years_found = re.findall(r"\b(20\d{2})\b", question)
+        return list(set(years_found))
+
+    def _extract_months_days(self, question: str) -> dict[str, list[int]]:
+        """Extract months and days mentioned in the question."""
+        question_lower = question.lower()
+        month_names = {
+            "january": 1,
+            "february": 2,
+            "march": 3,
+            "april": 4,
+            "may": 5,
+            "june": 6,
+            "july": 7,
+            "august": 8,
+            "september": 9,
+            "october": 10,
+            "november": 11,
+            "december": 12,
+            "jan": 1,
+            "feb": 2,
+            "mar": 3,
+            "apr": 4,
+            "jun": 6,
+            "jul": 7,
+            "aug": 8,
+            "sep": 9,
+            "oct": 10,
+            "nov": 11,
+            "dec": 12,
+        }
+
+        months_found: list[int] = []
+        for month_name, month_num in month_names.items():
+            if month_name in question_lower:
+                months_found.append(month_num)
+
+        days_found: list[int] = []
+        day_match = re.search(r"ending\s+(\d{1,2})(?:[a-z]{2})?\b", question_lower)
+        if day_match:
+            days_found.append(int(day_match.group(1)))
+
+        for month_name in month_names:
+            if re.search(rf"ending\s+{month_name}\b", question_lower):
+                days_found.append(0)
+                break
+
+        if re.search(r"month\s+ending", question_lower):
+            days_found.append(0)
+
+        return {"months": list(set(months_found)), "days": list(set(days_found))}
+
+    def _extract_preferences(self, question: str) -> dict[str, bool]:
+        """Extract document type and category preferences."""
+        question_lower = question.lower()
+        return {
+            "is_family": "family" in question_lower,
+            "is_personal": "personal" in question_lower,
+            "wants_expenses": any(
+                word in question_lower for word in ["expense", "spent", "cost", "spending", "loss"]
+            ),
+            "wants_income": any(
+                word in question_lower for word in ["income", "earn", "received", "revenue", "gain"]
+            ),
+        }
+
+
+# ============================================================================
+# DOCUMENT FILTERS - Single Responsibility: Filter documents by criteria
+# ============================================================================
+
+
+class DocumentFilter(ABC):
+    """Abstract base for filtering documents."""
+
+    @abstractmethod
+    def matches(self, metadata: dict[str, Any]) -> bool:
+        """Return True if document matches this filter."""
+        pass
+
+
+class YearFilter(DocumentFilter):
+    """Filter documents by year."""
+
+    def __init__(self, years: list[str]):
+        self.years = years
+
+    def matches(self, metadata: dict[str, Any]) -> bool:
+        return metadata.get("year") in self.years
+
+
+class MonthDayFilter(DocumentFilter):
+    """Filter documents by month and day."""
+
+    def __init__(self, months: list[int], days: list[int]):
+        self.months = months
+        self.days = days
+
+    def matches(self, metadata: dict[str, Any]) -> bool:
+        if not self.months and not self.days:
+            return True
+
+        doc_month = int(metadata.get("month", 0)) if metadata.get("month") != "unknown" else 0
+        doc_date = cast(str, metadata.get("date", ""))
+        doc_day = int(doc_date.split("-")[2]) if doc_date != "unknown" else 0
+
+        if self.months and doc_month not in self.months:
+            return False
+
+        if self.days:
+            if 0 in self.days:  # Month-ending documents
+                return doc_day >= 28
+            elif doc_day not in self.days:
+                return False
+
+        return True
+
+
+class CategoryTypeFilter(DocumentFilter):
+    """Filter documents by category (family/personal) and type (expenses/income)."""
+
+    def __init__(self, preferences: dict[str, bool]):
+        self.is_family = preferences.get("is_family", False)
+        self.is_personal = preferences.get("is_personal", False)
+        self.wants_expenses = preferences.get("wants_expenses", False)
+        self.wants_income = preferences.get("wants_income", False)
+
+    def matches(self, metadata: dict[str, Any]) -> bool:
+        doc_category = metadata.get("document_category", "personal")
+        doc_type = metadata.get("document_type", "unknown")
+
+        # Family filter
+        if self.is_family and doc_category != "family":
+            return False
+
+        if (self.is_personal or not self.is_family) and doc_category == "family":
+            if not self.wants_expenses:
+                return False
+
+        # Type filter
+        if self.wants_expenses and "expense" not in doc_type and doc_category != "family":
+            if "income" not in doc_type:
+                return False
+
+        if self.wants_income and "income" not in doc_type:
+            return False
+
+        return True
+
+
+class DocumentFilterChain:
+    """Applies multiple filters in sequence (Chain of Responsibility pattern)."""
+
+    def __init__(self, filters: list[DocumentFilter]):
+        self.filters = filters
+
+    def apply(self, metadata: dict[str, Any]) -> bool:
+        """Return True if document passes all filters."""
+        return all(f.matches(metadata) for f in self.filters)
+
+
+# ============================================================================
+# SOURCE EXTRACTION - Single Responsibility: Extract source citations
+# ============================================================================
+
+
+class SourceExtractor:
+    """Extracts unique source citations from retrieved documents."""
+
+    def extract(self, docs: list[Any]) -> list[dict[str, str]]:
+        """Extract unique source files from documents."""
+        sources: list[dict[str, str]] = []
+        seen_files: set[str] = set()
+
+        for doc in docs:
+            source_file = doc.metadata.get("source_file", "Unknown")
+            if source_file not in seen_files:
+                sources.append(
+                    {
+                        "file": source_file,
+                        "type": doc.metadata.get("document_type", "unknown"),
+                        "date": doc.metadata.get("date", "unknown"),
+                    }
+                )
+                seen_files.add(source_file)
+
+        return sources
+
+
+# ============================================================================
+# PROMPT MANAGEMENT - Single Responsibility: Manage LLM prompts
+# ============================================================================
+
+
+class PromptManager:
+    """Manages prompt templates for the LLM."""
+
+    @staticmethod
+    def get_system_prompt() -> str:
+        """Return the system prompt for Claude."""
+        return """You are a helpful financial assistant analyzing personal finance documents.
+Answer questions about the user's expenses, income, and financial history based on the provided context.
+
+Guidelines for Interpretation:
+- Only use information from the provided context
+- If the context doesn't contain enough information, say so clearly
+- Be specific with numbers and dates when available
+- Distinguish between family and personal finances when relevant
+- Organize your response clearly, especially for comparisons
+- If asked about trends, analyze patterns across multiple documents
+
+Important Notes about Document Content:
+- "Projected" columns contain estimates, not actual amounts. Use the untitled column for actual current amounts.
+- Income Statement documents contain both income (gains) and expenses (losses)
+- Column names and row names in the documents explain what data you are analyzing
+- The documents you receive have already been filtered for the requested date range and category
+
+Context from financial documents:
+{context}
+"""
+
+    @staticmethod
+    def create_prompt(system_prompt: str) -> ChatPromptTemplate:
+        """Create a prompt template from system prompt."""
+        return ChatPromptTemplate.from_messages(
+            [
+                SystemMessagePromptTemplate.from_template(system_prompt),
+                HumanMessagePromptTemplate.from_template("{question}"),
+            ]
+        )  # type: ignore
+
     """
     A RAG (Retrieval-Augmented Generation) system for personal financial documents.
 
@@ -304,10 +553,7 @@ class FinancialRAG:
         """
         Ask a question about your financial documents.
 
-        This method:
-        1. Finds the most relevant document chunks for your question
-        2. Sends them to Claude along with your question
-        3. Returns Claude's answer based on the documents
+        Simplified to focus on orchestration only (Single Responsibility).
 
         Args:
             question: Your question (e.g., "What were my grocery expenses in March 2024?")
@@ -318,88 +564,45 @@ class FinancialRAG:
         """
         print(f"🔍 Query: {question}")
 
-        # System prompt that tells Claude how to behave
-        system_prompt = """You are a helpful financial assistant analyzing personal
-finance documents. Your job is to answer questions about the user's expenses,
-income, and financial history based on the provided context.
+        # 1. PARSE THE QUESTION (delegated to QuestionAnalyzer)
+        analyzer = QuestionAnalyzer()
+        analysis = analyzer.analyze(question)
 
-IMPORTANT: Document Structure and Dates
-- All documents are named with dates in YYYY-MM-DD format (e.g., "Family Expenses 2025-11-30.pdf" and "Income Statement 2025-01-31.pdf)
-- Each document only reflects data for the month ending in the year, month, and day in the filename
-- Parent folders contain years like "Financial History (2025)"
-- Parent folders show the year the documents belong to of when year the data pertains to
-- Documents are categorized as either "family" or "personal" (defaults to personal if file name does not specify, "Personal")
-- "Family" documents have the word "Family" in the filename
-- An example of "family" document: "Family Expenses 2025-11-30.pdf"
-- An example of "personal" document: "Income Statement 2025-01-31.pdf"
-- "Income Statement" documents contain both income (gains) and expenses (losses)
-- "Income Statement" and "Family Expenses" documents have columns with titles containing "Projected". These are not actual amounts. Actual amount, current ammounts are found in the column with no title.
-- Document types include: "expenses", "income", or "income,expenses"
-- When answering about recent data, prioritize documents with more recent dates (see filenames and metadata)
-
-Guidelines:
-- Only use information from the provided context
-- If the context doesn't contain enough information, say so clearly
-- Be specific with numbers and dates when available
-- Pay attention to document metadata (dates, categories) to give accurate timeframes
-- Distinguish between family and personal finances when relevant
-- Organize your response clearly, especially for comparisons
-- If asked about trends, analyze patterns across multiple documents with attention to dates
-- Some calculations asked may require gathering data from multiple documents
-- Don't use the creation or modification date of the PDF files to determine the data the financial data pertains to.
-- Use only the dates found in the parent folder names and the PDF filenames to determine the date the financial data pertains to.
-- The PDF files give column names and row names to explain what data you are analyzing.
-
-Context from financial documents:
-{context}
-"""
-
-        # Create prompt template
-        prompt = ChatPromptTemplate.from_messages(  # type: ignore
-            [
-                SystemMessagePromptTemplate.from_template(system_prompt),
-                HumanMessagePromptTemplate.from_template("{question}"),
-            ]
-        )  # type: ignore
-
-        # Extract temporal and categorical information from the question
-        years_in_question = self._extract_years_from_question(question)
-        months_days = self._extract_months_days_from_question(question)
-        doc_preferences = self._extract_document_preferences(question)
-
-        # Retrieve relevant documents with temporal and category-aware filtering
+        # 2. RETRIEVE RELEVANT DOCUMENTS
         retrieved_docs = self._retrieve_with_priority(
-            question, years_in_question, months_days, doc_preferences
+            question,
+            analysis["years"],
+            analysis["months_days"],
+            analysis["preferences"],
         )
 
-        # Format context from documents
-        context = "\n\n".join([doc.page_content for doc in retrieved_docs])  # type: ignore
+        # 3. BUILD LLM PROMPT (delegated to PromptManager)
+        prompt_manager = PromptManager()
+        system_prompt = prompt_manager.get_system_prompt()
+        prompt = prompt_manager.create_prompt(system_prompt)
 
-        # Create and invoke the chain
+        # 4. FORMAT CONTEXT FROM DOCUMENTS (with metadata for clarity)
+        context_parts = []
+        for doc in retrieved_docs:  # type: ignore
+            metadata = doc.metadata if hasattr(doc, "metadata") else {}  # type: ignore
+            source_info = f"[Source: {metadata.get('source', 'unknown')}]" if metadata else ""  # type: ignore
+            context_parts.append(f"{source_info}\n{doc.page_content}")  # type: ignore
+        context = "\n\n".join(context_parts)  # type: ignore
+
+        # 5. INVOKE LLM
         chain = (  # type: ignore
             {"context": lambda x: context, "question": lambda x: question}  # type: ignore
             | prompt
             | self.llm
             | StrOutputParser()
         )  # type: ignore
-
         answer = chain.invoke({})  # type: ignore
 
+        # 6. EXTRACT SOURCES (delegated to SourceExtractor)
         sources: list[dict[str, str]] = []
         if include_sources:
-            # Extract unique source files
-            seen_files = set()  # type: ignore
-            for doc in retrieved_docs:  # type: ignore
-                source_file = doc.metadata.get("source_file", "Unknown")  # type: ignore
-                if source_file not in seen_files:
-                    sources.append(
-                        {
-                            "file": source_file,
-                            "type": doc.metadata.get("document_type", "unknown"),  # type: ignore
-                            "date": doc.metadata.get("date", "unknown"),  # type: ignore
-                        }
-                    )
-                    seen_files.add(source_file)  # type: ignore
+            extractor = SourceExtractor()
+            sources = extractor.extract(retrieved_docs)  # type: ignore
 
         response: QueryResponseDict = cast(
             QueryResponseDict,
@@ -409,137 +612,40 @@ Context from financial documents:
         return response
 
     def _extract_years_from_question(self, question: str) -> list[str]:
-        """
-        Extract years mentioned in the question (e.g., "2025", "2024").
+        """Extract years from question. DEPRECATED: Use QuestionAnalyzer instead."""
+        analyzer = QuestionAnalyzer()
+        return analyzer._extract_years(question)
 
-        Args:
-            question: The user's question
+    def _extract_months_days_from_question(self, question: str) -> dict[str, list[int]]:
+        """Extract months/days from question. DEPRECATED: Use QuestionAnalyzer instead."""
+        analyzer = QuestionAnalyzer()
+        return analyzer._extract_months_days(question)
 
-        Returns:
-            List of years found in the question
-        """
-        # Find all 4-digit numbers that look like years (2000-2099)
-        years_found = re.findall(r"\b(20\d{2})\b", question)
-        return list(set(years_found))  # Remove duplicates
+    def _extract_document_preferences(self, question: str) -> dict[str, bool]:
+        """Extract preferences from question. DEPRECATED: Use QuestionAnalyzer instead."""
+        analyzer = QuestionAnalyzer()
+        return analyzer._extract_preferences(question)
 
-    def _extract_months_days_from_question(self, question: str) -> dict:  # type: ignore
-        """
-        Extract months and days mentioned in the question.
-        Looks for month names (January, Feb, etc.) and day numbers.
-        Each file represents data for the month ending on that specific day.
-
-        Args:
-            question: The user's question
-
-        Returns:
-            Dictionary with 'months' and 'days' keys containing lists of integers
-        """
-        question_lower = question.lower()
-        month_names = {
-            "january": 1,
-            "february": 2,
-            "march": 3,
-            "april": 4,
-            "may": 5,
-            "june": 6,
-            "july": 7,
-            "august": 8,
-            "september": 9,
-            "october": 10,
-            "november": 11,
-            "december": 12,
-            "jan": 1,
-            "feb": 2,
-            "mar": 3,
-            "apr": 4,
-            "jun": 6,
-            "jul": 7,
-            "aug": 8,
-            "sep": 9,
-            "oct": 10,
-            "nov": 11,
-            "dec": 12,
-        }
-
-        months_found = []
-        for month_name, month_num in month_names.items():
-            if month_name in question_lower:
-                months_found.append(month_num)
-
-        # Look for day numbers (1-31) in patterns like "ending 31" or "month ending"
-        days_found = []
-
-        # Look for "ending <day>" pattern (e.g., "ending 31")
-        day_match = re.search(r"ending\s+(\d{1,2})(?:[a-z]{2})?\b", question_lower)
-        if day_match:
-            days_found.append(int(day_match.group(1)))
-
-        # Look for "ending <month name>" pattern and infer last day of month
-        for month_name, month_num in month_names.items():
-            if re.search(rf"ending\s+{month_name}\b", question_lower):
-                # Add a flag for month-ending (days 28-31)
-                days_found.append(0)  # 0 means "month-ending documents"
-                break
-
-        # Also match "month ending" with implicit last day (28-31)
-        if re.search(r"month\s+ending", question_lower):
-            # This means they want month-end data, which would be days 28-31
-            # We'll use this as a flag to prioritize documents that represent month-end
-            days_found.append(0)  # 0 means "month-ending documents"
-
-        return {"months": list(set(months_found)), "days": list(set(days_found))}  # type: ignore
-
-    def _extract_document_preferences(self, question: str) -> dict:  # type: ignore
-        """
-        Extract preferences about document type and category from the question.
-        Determines if looking for family/personal, expenses/income, etc.
-
-        Important:
-        - If "family" in question, prioritize family documents
-        - If "personal" in question OR not "family", also include income statements
-        - Income statements contain both gains (income) and losses (expenses)
-        - Personal expenses should match non-family documents
-
-        Args:
-            question: The user's question
-
-        Returns:
-            Dictionary with preferences: is_family, is_personal, wants_expenses, wants_income
-        """
-        question_lower = question.lower()
-
-        return {  # type: ignore
-            "is_family": "family" in question_lower,
-            "is_personal": "personal" in question_lower,
-            "wants_expenses": any(
-                word in question_lower for word in ["expense", "spent", "cost", "spending", "loss"]
-            ),
-            "wants_income": any(
-                word in question_lower for word in ["income", "earn", "received", "revenue", "gain"]
-            ),
-        }  # type: ignore
-
-    def _retrieve_with_priority(  # type: ignore
+    def _retrieve_with_priority(
         self,
         question: str,
         years: list[str],
-        months_days: dict,  # type: ignore
-        preferences: dict,  # type: ignore
-    ) -> list:  # type: ignore
+        months_days: dict[str, list[int]],
+        preferences: dict[str, bool],
+    ) -> list[Any]:
         """
-        Retrieve documents with priority given to years, months, days, and document type preferences.
+        Retrieve documents using hybrid retrieval (metadata-first + semantic search).
 
-        Matching strategy:
-        1. Year filter (required if years specified)
-        2. Month/day filter (prioritize month-end documents if requested)
-        3. Category filter (family vs personal, expenses vs income)
-        4. Fallback to semantic search if no matches
+        This implements best practice for RAG with structured metadata:
+        1. Filter by metadata (year, month, category, type) - reduces search space
+        2. Embed query and search filtered results - semantic relevance
+        3. Sort by similarity and return top 5 - ranking by relevance
 
         Args:
             question: The user's question
             years: List of years extracted from the question
             months_days: Dict with 'months' and 'days' lists
-            preferences: Dict with document type preferences (is_family, wants_expenses, etc.)
+            preferences: Dict with document type preferences
 
         Returns:
             List of relevant document chunks
@@ -548,117 +654,57 @@ Context from financial documents:
         from langchain_core.documents import Document
 
         if not years:
-            # No specific year mentioned, return standard results
+            # No specific year mentioned, return standard semantic results
             return self.retriever.invoke(question)  # type: ignore
 
-        # Get all documents and apply filters
+        # BUILD FILTER CHAIN (Single Responsibility: Each filter has one job)
+        filters: list[DocumentFilter] = [
+            YearFilter(years),
+            MonthDayFilter(months_days.get("months", []), months_days.get("days", [])),  # type: ignore
+            CategoryTypeFilter(preferences),
+        ]
+        filter_chain = DocumentFilterChain(filters)
+
+        # GET ALL DOCUMENTS FROM VECTOR STORE
         db = chromadb.PersistentClient(path=self.persist_directory)
         collection = db.get_collection("financial_documents")
-
-        # Embed the question for semantic search
         query_embedding = self.embeddings.embed_query(question)
 
-        # Get more initial results to filter through
-        # Get up to 300 to ensure documents with specified year/month/day are included
-        # (semantic search may not rank them highly since it doesn't understand dates well)
+        # METADATA-FIRST APPROACH: Get more results, we'll filter aggressively
         all_docs_result = collection.query(
             query_embeddings=[query_embedding],
             n_results=300,
             include=["metadatas", "documents", "distances"],
         )
 
-        # Extract data from results
+        # APPLY METADATA FILTERS (reduces search space)
         metadatas = all_docs_result["metadatas"][0] if all_docs_result["metadatas"] else []  # type: ignore
         documents = all_docs_result["documents"][0] if all_docs_result["documents"] else []  # type: ignore
         distances = all_docs_result["distances"][0] if all_docs_result["distances"] else []  # type: ignore
 
-        filtered_docs: list = []  # type: ignore
+        filtered_docs: list[tuple[Any, Any]] = []
         for meta, doc_text, distance in zip(metadatas, documents, distances):  # type: ignore
-            # Filter by year (required)
-            if meta.get("year") not in years:  # type: ignore
-                continue
+            if filter_chain.apply(meta):  # type: ignore
+                doc = Document(page_content=doc_text, metadata=meta)  # type: ignore
+                filtered_docs.append((doc, distance))
 
-            # Check month/day filters (only apply if specified)
-            months_specified = months_days.get("months", [])  # type: ignore
-            days_specified = months_days.get("days", [])  # type: ignore
-
-            # Only apply month/day filtering if they were actually mentioned in the question
-            if months_specified or days_specified:
-                doc_month = int(meta.get("month", 0)) if meta.get("month") != "unknown" else 0  # type: ignore
-                doc_day = (
-                    int(meta.get("date", "").split("-")[2]) if meta.get("date") != "unknown" else 0
-                )  # type: ignore
-
-                # If months are specified, document month must match
-                if months_specified and doc_month not in months_specified:  # type: ignore
-                    continue
-
-                # If days are specified, check if document day matches
-                if days_specified:
-                    # 0 means "month-ending documents" (days 28-31)
-                    if 0 in days_specified:  # type: ignore
-                        if doc_day < 28:  # type: ignore
-                            continue
-                    elif doc_day not in days_specified:  # type: ignore
-                        # Exact day match required if specific day(s) mentioned
-                        continue
-
-            # Check document category preferences
-            is_family = preferences.get("is_family", False)  # type: ignore
-            is_personal = preferences.get("is_personal", False)  # type: ignore
-            wants_expenses = preferences.get("wants_expenses", False)  # type: ignore
-            wants_income = preferences.get("wants_income", False)  # type: ignore
-
-            doc_category = meta.get("document_category", "personal")  # type: ignore
-            doc_type = meta.get("document_type", "unknown")  # type: ignore
-
-            # Family documents only have "Family Expenses" in the name
-            # Personal items include both Income Statements (which have income AND expenses)
-            # If asking for family, exclude non-family documents
-            if is_family and doc_category != "family":  # type: ignore
-                continue
-
-            # If asking for personal and not asking for family, exclude family docs
-            # OR if not mentioning family at all, include income statements too
-            if (is_personal or not is_family) and doc_category == "family":  # type: ignore
-                # Allow family if also wanting expenses (they may still be relevant)
-                if not wants_expenses:  # type: ignore
-                    continue
-
-            # Type matching for expenses vs income
-            # Income statements contain both, so they match either query
-            # Family Expenses only have expenses
-            if wants_expenses and "expense" not in doc_type and doc_category != "family":  # type: ignore
-                # Income statements are OK for expense queries (contain losses/expenses)
-                if "income" not in doc_type:  # type: ignore
-                    continue
-
-            if wants_income and "income" not in doc_type:  # type: ignore
-                continue
-
-            # Document passed all filters, add it
-            doc = Document(page_content=doc_text, metadata=meta)  # type: ignore
-            filtered_docs.append((doc, distance))  # type: ignore
-
-        # If we found matching documents, return top 5 sorted by relevance
+        # SORT BY SEMANTIC RELEVANCE (ranking by similarity)
         if filtered_docs:
             filtered_docs.sort(key=lambda x: x[1])  # type: ignore
-            return [doc for doc, _ in filtered_docs[:5]]  # type: ignore
+            return [doc for doc, _ in filtered_docs[:5]]
 
-        # Fallback: return top semantic matches if no filters matched anything
-        # This prevents empty results when filters are too restrictive
-        fallback_docs: list = []  # type: ignore
+        # FALLBACK: If filters are too restrictive, return year-matched results only
+        fallback_docs: list[Any] = []
         for meta, doc_text in zip(metadatas, documents):  # type: ignore
-            # At least match the year
             if meta.get("year") in years:  # type: ignore
                 doc = Document(page_content=doc_text, metadata=meta)  # type: ignore
-                fallback_docs.append(doc)  # type: ignore
+                fallback_docs.append(doc)
 
         return (
             fallback_docs[:5]
             if fallback_docs
             else (self.retriever.invoke(question) if self.retriever else [])
-        )  # type: ignore
+        )
 
     def get_stats(self) -> StatsDict:
         """
