@@ -65,9 +65,9 @@ class FinancialDocumentHandler(FileSystemEventHandler):
         """Lazy initialization of RAG instance."""
         if self._rag is None:
             logger.info("Initializing RAG pipeline...")
-            from financial_rag.rag_pipeline import FinancialRAG
+            from financial_rag.rag_pipeline import FinancialRag
 
-            self._rag = FinancialRAG()
+            self._rag = FinancialRag()
         return self._rag
 
     def _should_process(self, path: str) -> bool:

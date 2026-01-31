@@ -742,7 +742,7 @@ def main():
     Example usage of the Financial RAG Pipeline.
     """
     # Initialize the RAG system
-    rag = FinancialRAG()
+    rag = FinancialRag()
 
     # Check if we have documents
     stats = rag.get_stats()

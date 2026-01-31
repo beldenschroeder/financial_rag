@@ -69,7 +69,21 @@ source .venv/bin/activate
 pip install -e .
 ```
 
-### Step 2: (Optional) VSCode Setup with Ruff
+### Step 2: VSCode IDE Setup
+
+#### Pylance Import Resolution
+
+After Step 1, Pylance in VSCode should recognize imports like `from financial_rag.rag_pipeline import FinancialRag`.
+
+If you see "FinancialRag is unknown import symbol" error:
+
+1. The `uv pip install -e .` from Step 1 installs the package in **editable mode**, which makes it discoverable to Pylance
+2. Reload VS Code: `Cmd+Shift+P` → "Reload Window"
+3. Or clear Pylance cache: `Cmd+Shift+P` → "Pylance: Clear Cache"
+
+This only needs to be done once after the initial setup.
+
+#### (Optional) VSCode Formatting with Ruff
 
 For automatic code formatting and linting on save:
 
@@ -133,8 +147,8 @@ uv run python example.py
 
 # Option 2: Clear programmatically, then run example
 uv run python -c "
-from financial_rag.rag_pipeline import FinancialRAG
-rag = FinancialRAG()
+from financial_rag.rag_pipeline import FinancialRag
+rag = FinancialRag()
 rag.clear_database()
 print('✅ Database cleared')
 "
@@ -211,7 +225,7 @@ pytest -v
 pytest tests/test_rag_pipeline.py
 
 # Run a specific test
-pytest tests/test_rag_pipeline.py::TestFinancialRAGBasics::test_rag_import
+pytest tests/test_rag_pipeline.py::TestFinancialRagBasics::test_rag_import
 
 # Run tests with coverage report
 pytest --cov=. --cov-report=html
@@ -236,8 +250,8 @@ class TestMyFeature:
 
     def test_basic_functionality(self):
         """Test basic functionality."""
-        from financial_rag.rag_pipeline import FinancialRAG
-        rag = FinancialRAG()
+        from financial_rag.rag_pipeline import FinancialRag
+        rag = FinancialRag()
         assert rag is not None
 
     def test_with_fixture(self, sample_query):
@@ -459,6 +473,18 @@ For typical personal use (20-50 queries/month), expect **< $1/month**.
 - Your API key should be kept secret (never commit `.env` to git)
 
 ## 🐛 Troubleshooting
+
+### "FinancialRag is unknown import symbol" (Pylance error in VSCode)
+
+This happens when the package isn't installed in the virtual environment that Pylance is using.
+
+**Solution:**
+
+1. Ensure you ran `uv pip install -e .` in Step 1
+2. Reload VS Code: `Cmd+Shift+P` → "Reload Window"
+3. Or clear Pylance cache: `Cmd+Shift+P` → "Pylance: Clear Cache"
+
+The editable install (`-e` flag) makes your local package discoverable to the IDE without needing to reinstall when you make changes.
 
 ### "ANTHROPIC_API_KEY not found"
 

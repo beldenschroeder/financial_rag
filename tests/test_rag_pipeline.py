@@ -1,20 +1,20 @@
 """Unit tests for rag_pipeline module."""
 
 
-class TestFinancialRAGBasics:
+class TestFinancialRagBasics:
     """Test basic RAG pipeline functionality."""
 
     def test_rag_import(self):
-        """Test that FinancialRAG can be imported."""
-        from financial_rag.rag_pipeline import FinancialRAG
+        """Test that FinancialRag can be imported."""
+        from financial_rag.rag_pipeline import FinancialRag
 
-        assert FinancialRAG is not None
+        assert FinancialRag is not None
 
     def test_rag_initialization(self):
-        """Test FinancialRAG initialization."""
-        from financial_rag.rag_pipeline import FinancialRAG
+        """Test FinancialRag initialization."""
+        from financial_rag.rag_pipeline import FinancialRag
 
-        rag = FinancialRAG()
+        rag = FinancialRag()
         assert rag is not None
 
 

@@ -37,9 +37,9 @@ def main():
 
     # Initialize RAG
     print("🔄 Initializing RAG pipeline...")
-    from financial_rag.rag_pipeline import FinancialRAG
+    from financial_rag.rag_pipeline import FinancialRag
 
-    rag = FinancialRAG()
+    rag = FinancialRag()
 
     # Check stats
     stats = rag.get_stats()
@@ -91,8 +91,8 @@ def main():
             print()
             print("To ingest documents, run in Python:")
             print()
-            print("  from rag_pipeline import FinancialRAG")
-            print("  rag = FinancialRAG()")
+            print("  from rag_pipeline import FinancialRag")
+            print("  rag = FinancialRag()")
             print('  rag.ingest_documents("/path/to/your/pdfs")')
             return
 

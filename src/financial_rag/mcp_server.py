@@ -31,9 +31,9 @@ def get_rag():
     """Get or initialize the RAG instance."""
     global _rag_instance
     if _rag_instance is None:
-        from financial_rag.rag_pipeline import FinancialRAG
+        from financial_rag.rag_pipeline import FinancialRag
 
-        _rag_instance = FinancialRAG()
+        _rag_instance = FinancialRag()
     return _rag_instance
 
 
