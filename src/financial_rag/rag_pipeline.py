@@ -293,6 +293,8 @@ Context from financial documents:
             ]
         )  # type: ignore
 
+
+class FinancialRag:
     """
     A RAG (Retrieval-Augmented Generation) system for personal financial documents.
 
@@ -337,9 +339,11 @@ Context from financial documents:
 
         # Initialize embeddings (free, runs locally on your Mac)
         print(f"   Loading embedding model: {embedding_model}")
+        device = self._detect_device()
+        print(f"   Using device: {device}")
         self.embeddings = HuggingFaceEmbeddings(
             model_name=embedding_model,
-            model_kwargs={"device": "cpu"},  # Use 'mps' for M1/M2 Mac GPU acceleration
+            model_kwargs={"device": device},
             encode_kwargs={"normalize_embeddings": True},
         )
 
@@ -371,6 +375,50 @@ Context from financial documents:
         )
 
         print("✅ RAG Pipeline initialized successfully!\n")
+
+    def _detect_device(self) -> str:
+        """
+        Auto-detect the best device for embeddings based on platform and environment.
+
+        Priority order:
+        1. Environment variable EMBEDDING_DEVICE (if set)
+        2. Apple Silicon (M1/M2/M3+) Macs → "mps"
+        3. All other systems → "cpu"
+
+        Returns:
+            Device string: "mps" for Apple Silicon, "cpu" for everything else
+        """
+        # Check for explicit environment variable first
+        device_env = os.getenv("EMBEDDING_DEVICE")
+        if device_env:
+            print(f"   Using device from EMBEDDING_DEVICE: {device_env}")
+            return device_env
+
+        # Try to detect Apple Silicon
+        try:
+            import platform
+            import sys
+
+            if sys.platform == "darwin":  # macOS
+                machine = platform.machine()
+                # Apple Silicon uses arm64/aarch64 architecture
+                if "arm64" in machine or "aarch64" in machine:
+                    # Verify MPS is actually available
+                    try:
+                        import torch
+
+                        if torch.backends.mps.is_available():
+                            print("   Apple Silicon detected, using MPS acceleration")
+                            return "mps"
+                    except (ImportError, AttributeError):
+                        # PyTorch not available or MPS not available
+                        pass
+        except Exception:
+            pass
+
+        # Default to CPU for all other cases
+        print("   Using CPU (set EMBEDDING_DEVICE env var to override)")
+        return "cpu"
 
     def ingest_documents(self, documents_path: str, force_reingest: bool = False) -> int:
         """
