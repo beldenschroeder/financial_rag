@@ -316,6 +316,7 @@ class FinancialRag:
         persist_directory: str | None = None,
         embedding_model: str | None = None,
         claude_model: str | None = None,
+        max_tokens: int | None = None,
     ):
         """
         Initialize the RAG pipeline.
@@ -327,6 +328,8 @@ class FinancialRag:
                             (env: EMBEDDING_MODEL, default: sentence-transformers/all-MiniLM-L6-v2)
             claude_model: Which Claude model to use for generation
                          (env: CLAUDE_MODEL, default: claude-sonnet-4-20250514)
+            max_tokens: Maximum tokens in Claude response
+                       (env: MAX_TOKENS, default: 4096)
         """
         print("🚀 Initializing Financial RAG Pipeline...")
 
@@ -336,6 +339,7 @@ class FinancialRag:
             "EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2"
         )
         claude_model = claude_model or os.getenv("CLAUDE_MODEL", "claude-sonnet-4-20250514")
+        self.max_tokens = max_tokens or int(os.getenv("MAX_TOKENS", "4096"))
 
         # Initialize embeddings (free, runs locally on your Mac)
         print(f"   Loading embedding model: {embedding_model}")
@@ -366,7 +370,13 @@ class FinancialRag:
             )
 
         print(f"   Connecting to Claude ({claude_model})")
-        self.llm = ChatAnthropic(model=claude_model, api_key=api_key, max_tokens=4096)  # type: ignore
+        self.llm = ChatAnthropic(
+            model_name=claude_model,
+            anthropic_api_key=api_key,  # type: ignore
+            max_tokens=self.max_tokens,  # type: ignore
+            timeout=60.0,
+            stop=None,
+        )
 
         # Create retriever (finds relevant documents for a query)
         self.retriever = self.vectorstore.as_retriever(
