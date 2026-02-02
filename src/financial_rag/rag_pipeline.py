@@ -105,7 +105,7 @@ class QuestionAnalyzer:
             days_found.append(int(day_match.group(1)))
 
         for month_name in month_names:
-            if re.search(rf"ending\s+{month_name}\b", question_lower):
+            if re.search(rf"\bending\s+{month_name}\b", question_lower):
                 days_found.append(0)
                 break
 
