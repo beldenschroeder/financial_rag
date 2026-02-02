@@ -100,7 +100,7 @@ class QuestionAnalyzer:
                 months_found.append(month_num)
 
         days_found: list[int] = []
-        day_match = re.search(r"ending\s+(\d{1,2})(?:[a-z]{2})?\b", question_lower)
+        day_match = re.search(r"\bending\s+(\d{1,2})(?:[a-z]{2})?\b", question_lower)
         if day_match:
             days_found.append(int(day_match.group(1)))
 
