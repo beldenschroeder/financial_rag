@@ -11,7 +11,7 @@ import os
 import re
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, TypedDict, cast
+from typing import Any, Mapping, TypedDict, cast
 
 from dotenv import load_dotenv
 from langchain_anthropic import ChatAnthropic
@@ -138,7 +138,7 @@ class DocumentFilter(ABC):
     """Abstract base for filtering documents."""
 
     @abstractmethod
-    def matches(self, metadata: dict[str, Any]) -> bool:
+    def matches(self, metadata: Mapping[str, Any]) -> bool:
         """Return True if document matches this filter."""
         pass
 
@@ -149,7 +149,7 @@ class YearFilter(DocumentFilter):
     def __init__(self, years: list[str]):
         self.years = years
 
-    def matches(self, metadata: dict[str, Any]) -> bool:
+    def matches(self, metadata: Mapping[str, Any]) -> bool:
         return metadata.get("year") in self.years
 
 
@@ -160,7 +160,7 @@ class MonthDayFilter(DocumentFilter):
         self.months = months
         self.days = days
 
-    def matches(self, metadata: dict[str, Any]) -> bool:
+    def matches(self, metadata: Mapping[str, Any]) -> bool:
         if not self.months and not self.days:
             return True
 
@@ -189,7 +189,7 @@ class CategoryTypeFilter(DocumentFilter):
         self.wants_expenses = preferences.get("wants_expenses", False)
         self.wants_income = preferences.get("wants_income", False)
 
-    def matches(self, metadata: dict[str, Any]) -> bool:
+    def matches(self, metadata: Mapping[str, Any]) -> bool:
         doc_category = metadata.get("document_category", "personal")
         doc_type = metadata.get("document_type", "unknown")
 
@@ -218,7 +218,7 @@ class DocumentFilterChain:
     def __init__(self, filters: list[DocumentFilter]):
         self.filters = filters
 
-    def apply(self, metadata: dict[str, Any]) -> bool:
+    def apply(self, metadata: Mapping[str, Any]) -> bool:
         """Return True if document passes all filters."""
         return all(f.matches(metadata) for f in self.filters)
 
@@ -713,12 +713,12 @@ class FinancialRag:
 
         if not years:
             # No specific year mentioned, return standard semantic results
-            return self.retriever.invoke(question)  # type: ignore
+            return self.retriever.invoke(question)
 
         # BUILD FILTER CHAIN (Single Responsibility: Each filter has one job)
         filters: list[DocumentFilter] = [
             YearFilter(years),
-            MonthDayFilter(months_days.get("months", []), months_days.get("days", [])),  # type: ignore
+            MonthDayFilter(months_days.get("months", []), months_days.get("days", [])),
             CategoryTypeFilter(preferences),
         ]
         filter_chain = DocumentFilterChain(filters)
@@ -736,14 +736,14 @@ class FinancialRag:
         )
 
         # APPLY METADATA FILTERS (reduces search space)
-        metadatas = all_docs_result["metadatas"][0] if all_docs_result["metadatas"] else []  # type: ignore
-        documents = all_docs_result["documents"][0] if all_docs_result["documents"] else []  # type: ignore
-        distances = all_docs_result["distances"][0] if all_docs_result["distances"] else []  # type: ignore
+        metadatas = all_docs_result["metadatas"][0] if all_docs_result["metadatas"] else []
+        documents = all_docs_result["documents"][0] if all_docs_result["documents"] else []
+        distances = all_docs_result["distances"][0] if all_docs_result["distances"] else []
 
         filtered_docs: list[tuple[Any, Any]] = []
-        for meta, doc_text, distance in zip(metadatas, documents, distances):  # type: ignore
-            if filter_chain.apply(meta):  # type: ignore
-                doc = Document(page_content=doc_text, metadata=meta)  # type: ignore
+        for meta, doc_text, distance in zip(metadatas, documents, distances):
+            if filter_chain.apply(meta):
+                doc = Document(page_content=doc_text, metadata=meta)
                 filtered_docs.append((doc, distance))
 
         # SORT BY SEMANTIC RELEVANCE (ranking by similarity)
@@ -753,9 +753,9 @@ class FinancialRag:
 
         # FALLBACK: If filters are too restrictive, return year-matched results only
         fallback_docs: list[Any] = []
-        for meta, doc_text in zip(metadatas, documents):  # type: ignore
-            if meta.get("year") in years:  # type: ignore
-                doc = Document(page_content=doc_text, metadata=meta)  # type: ignore
+        for meta, doc_text in zip(metadatas, documents):
+            if meta.get("year") in years:
+                doc = Document(page_content=doc_text, metadata=meta)
                 fallback_docs.append(doc)
 
         return (
