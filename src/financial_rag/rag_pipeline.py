@@ -640,12 +640,12 @@ class FinancialRag:
         prompt = prompt_manager.create_prompt(system_prompt)
 
         # 4. FORMAT CONTEXT FROM DOCUMENTS (with metadata for clarity)
-        context_parts = []
-        for doc in retrieved_docs:  # type: ignore
-            metadata = doc.metadata if hasattr(doc, "metadata") else {}  # type: ignore
-            source_info = f"[Source: {metadata.get('source', 'unknown')}]" if metadata else ""  # type: ignore
-            context_parts.append(f"{source_info}\n{doc.page_content}")  # type: ignore
-        context = "\n\n".join(context_parts)  # type: ignore
+        context_parts: list[str] = []
+        for doc in retrieved_docs:
+            metadata: dict[str, Any] = doc.metadata if hasattr(doc, "metadata") else {}
+            source_info = f"[Source: {metadata.get('source', 'unknown')}]" if metadata else ""
+            context_parts.append(f"{source_info}\n{doc.page_content}")
+        context = "\n\n".join(context_parts)
 
         # 5. INVOKE LLM
         chain = (  # type: ignore
@@ -653,7 +653,7 @@ class FinancialRag:
             | prompt
             | self.llm
             | StrOutputParser()
-        )  # type: ignore
+        )
         answer = chain.invoke({})  # type: ignore
 
         # 6. EXTRACT SOURCES (delegated to SourceExtractor)
@@ -748,7 +748,7 @@ class FinancialRag:
 
         # SORT BY SEMANTIC RELEVANCE (ranking by similarity)
         if filtered_docs:
-            filtered_docs.sort(key=lambda x: x[1])  # type: ignore
+            filtered_docs.sort(key=lambda x: x[1])
             return [doc for doc, _ in filtered_docs[:5]]
 
         # FALLBACK: If filters are too restrictive, return year-matched results only
