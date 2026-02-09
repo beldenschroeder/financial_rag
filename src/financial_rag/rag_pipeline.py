@@ -286,12 +286,12 @@ Context from financial documents:
     @staticmethod
     def create_prompt(system_prompt: str) -> ChatPromptTemplate:
         """Create a prompt template from system prompt."""
-        return ChatPromptTemplate.from_messages(
+        return ChatPromptTemplate.from_messages(  # type: ignore
             [
                 SystemMessagePromptTemplate.from_template(system_prompt),
                 HumanMessagePromptTemplate.from_template("{question}"),
             ]
-        )  # type: ignore
+        )
 
 
 class FinancialRag:
@@ -668,21 +668,6 @@ class FinancialRag:
         )  # type: ignore
         print(f"✅ Found {len(retrieved_docs)} relevant chunks")  # type: ignore
         return response
-
-    def _extract_years_from_question(self, question: str) -> list[str]:
-        """Extract years from question. DEPRECATED: Use QuestionAnalyzer instead."""
-        analyzer = QuestionAnalyzer()
-        return analyzer._extract_years(question)
-
-    def _extract_months_days_from_question(self, question: str) -> dict[str, list[int]]:
-        """Extract months/days from question. DEPRECATED: Use QuestionAnalyzer instead."""
-        analyzer = QuestionAnalyzer()
-        return analyzer._extract_months_days(question)
-
-    def _extract_document_preferences(self, question: str) -> dict[str, bool]:
-        """Extract preferences from question. DEPRECATED: Use QuestionAnalyzer instead."""
-        analyzer = QuestionAnalyzer()
-        return analyzer._extract_preferences(question)
 
     def _retrieve_with_priority(
         self,
