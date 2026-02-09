@@ -116,13 +116,13 @@ def main():
 
             try:
                 result = rag.query(query, include_sources=True)
-                print(result["answer"][:500])  # type: ignore # Truncate long answers
-                if len(result["answer"]) > 500:  # type: ignore
+                print(result["answer"][:500])  # Truncate long answers
+                if len(result["answer"]) > 500:
                     print("...")
                 print()
 
                 if result.get("sources"):
-                    print("📎 Sources:", ", ".join([s["file"] for s in result["sources"][:3]]))  # type: ignore
+                    print("📎 Sources:", ", ".join([s["file"] for s in result["sources"][:3]]))
                 print()
             except Exception as e:
                 print(f"Error: {e}")

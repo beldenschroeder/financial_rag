@@ -660,13 +660,13 @@ class FinancialRag:
         sources: list[dict[str, str]] = []
         if include_sources:
             extractor = SourceExtractor()
-            sources = extractor.extract(retrieved_docs)  # type: ignore
+            sources = extractor.extract(retrieved_docs)
 
         response: QueryResponseDict = cast(
             QueryResponseDict,
-            {"answer": answer, "sources": sources},  # type: ignore
-        )  # type: ignore
-        print(f"✅ Found {len(retrieved_docs)} relevant chunks")  # type: ignore
+            {"answer": answer, "sources": sources},
+        )
+        print(f"✅ Found {len(retrieved_docs)} relevant chunks")
         return response
 
     def _retrieve_with_priority(
