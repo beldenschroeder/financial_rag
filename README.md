@@ -17,7 +17,30 @@ It works by:
 2. **Finding** relevant document chunks when you ask a question
 3. **Generating** accurate answers using Claude with your document context
 
-## 📁 Project Structure
+## � Table of Contents
+
+- [What This Does](#-what-this-does)
+- [Project Structure](#-project-structure)
+- [Quick Start](#-quick-start)
+  - [Step 1: Install Dependencies](#step-1-install-dependencies)
+  - [Step 2: VSCode IDE Setup](#step-2-vscode-ide-setup)
+  - [Step 3: Configure Environment](#step-3-configure-environment)
+  - [Step 4: Run the Quick Start Example](#step-4-run-the-quick-start-example)
+  - [Repopulating the Database and Running MCP Server](#repopulating-the-database-and-running-mcp-server)
+- [Code Quality with Ruff](#-code-quality-with-ruff)
+- [Unit Testing](#-unit-testing)
+- [Claude Desktop Integration (MCP)](#️-claude-desktop-integration-mcp)
+- [Auto-Sync New Documents](#-auto-sync-new-documents)
+- [Running Commands](#-running-commands)
+- [Available MCP Tools](#-available-mcp-tools)
+- [Configuration Options](#-configuration-options)
+- [Cost Breakdown](#-cost-breakdown)
+- [Security Notes](#-security-notes)
+- [Troubleshooting](#-troubleshooting)
+- [Learning Resources](#-learning-resources)
+- [License](#-license)
+
+## �📁 Project Structure
 
 ```
 financial-rag/
@@ -136,26 +159,76 @@ The script handles all the details—just follow the prompts!
 
 **Note:** You need to run this within the virtual environment. Using `uv run` is the easiest approach as it automatically handles the virtual environment without requiring manual activation.
 
-### Clearing the Database and Starting Fresh
+### Repopulating the Database and Running MCP Server
 
-If you want to clear all indexed documents and start over:
+If you want to clear all indexed documents and repopulate the database before running the MCP server, follow this workflow:
+
+#### Step 1: Clear the Existing Database
 
 ```bash
 # Option 1: Delete the database directory (simplest)
 rm -rf ./chroma_db
-uv run python example.py
 
-# Option 2: Clear programmatically, then run example
+# Option 2: Clear programmatically
 uv run python -c "
 from financial_rag.rag_pipeline import FinancialRag
 rag = FinancialRag()
 rag.clear_database()
 print('✅ Database cleared')
 "
-uv run python example.py
 ```
 
-Both approaches will give you a fresh, empty database to start indexing documents again.
+#### Step 2: Repopulate with Your Documents
+
+```bash
+# Option 1: Use the example script (interactive and guided)
+uv run python example.py
+# Follow the prompts to ingest your PDFs
+
+# Option 2: Ingest programmatically
+uv run python -c "
+from financial_rag.rag_pipeline import FinancialRag
+from pathlib import Path
+
+rag = FinancialRag()
+docs_path = Path('~/OneDrive/Documents/Finance/Financial History').expanduser()
+rag.ingest_documents(docs_path)
+print('✅ Documents ingested')
+"
+
+# Option 3: Ingest from a custom path
+uv run python -c "
+from financial_rag.rag_pipeline import FinancialRag
+from pathlib import Path
+
+rag = FinancialRag()
+docs_path = Path('/your/custom/path/to/documents').expanduser()
+rag.ingest_documents(docs_path)
+print('✅ Documents ingested')
+"
+```
+
+#### Step 3: Run the MCP Server
+
+See the [Running the MCP Server](#running-the-mcp-server) section below for detailed instructions.
+
+#### Complete One-Liner Workflow
+
+```bash
+# Clear database, repopulate, and run MCP server in sequence
+rm -rf ./chroma_db && \
+uv run python -c "
+from financial_rag.rag_pipeline import FinancialRag
+from pathlib import Path
+rag = FinancialRag()
+docs_path = Path('~/OneDrive/Documents/Finance/Financial History').expanduser()
+rag.ingest_documents(docs_path)
+print('✅ Database repopulated')
+" && \
+uv run python -m financial_rag.mcp_server
+```
+
+**Note:** The MCP server will continue running until you stop it (Ctrl+C). Make sure to restart Claude Desktop after stopping/starting the MCP server to ensure it connects properly.
 
 ## � Code Quality with Ruff
 
