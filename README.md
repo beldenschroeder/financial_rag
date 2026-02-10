@@ -26,7 +26,6 @@ It works by:
   - [Step 2: VSCode IDE Setup](#step-2-vscode-ide-setup)
   - [Step 3: Configure Environment](#step-3-configure-environment)
   - [Step 4: Run the Quick Start Example](#step-4-run-the-quick-start-example)
-  - [Repopulating the Database and Running MCP Server](#repopulating-the-database-and-running-mcp-server)
 - [Code Quality with Ruff](#-code-quality-with-ruff)
 - [Unit Testing](#-unit-testing)
 - [Claude Desktop Integration (MCP)](#️-claude-desktop-integration-mcp)
@@ -159,77 +158,6 @@ The script handles all the details—just follow the prompts!
 
 **Note:** You need to run this within the virtual environment. Using `uv run` is the easiest approach as it automatically handles the virtual environment without requiring manual activation.
 
-### Repopulating the Database and Running MCP Server
-
-If you want to clear all indexed documents and repopulate the database before running the MCP server, follow this workflow:
-
-#### Step 1: Clear the Existing Database
-
-```bash
-# Option 1: Delete the database directory (simplest)
-rm -rf ./chroma_db
-
-# Option 2: Clear programmatically
-uv run python -c "
-from financial_rag.rag_pipeline import FinancialRag
-rag = FinancialRag()
-rag.clear_database()
-print('✅ Database cleared')
-"
-```
-
-#### Step 2: Repopulate with Your Documents
-
-```bash
-# Option 1: Use the example script (interactive and guided)
-uv run python example.py
-# Follow the prompts to ingest your PDFs
-
-# Option 2: Ingest programmatically
-uv run python -c "
-from financial_rag.rag_pipeline import FinancialRag
-from pathlib import Path
-
-rag = FinancialRag()
-docs_path = Path('~/OneDrive/Documents/Finance/Financial History').expanduser()
-rag.ingest_documents(docs_path)
-print('✅ Documents ingested')
-"
-
-# Option 3: Ingest from a custom path
-uv run python -c "
-from financial_rag.rag_pipeline import FinancialRag
-from pathlib import Path
-
-rag = FinancialRag()
-docs_path = Path('/your/custom/path/to/documents').expanduser()
-rag.ingest_documents(docs_path)
-print('✅ Documents ingested')
-"
-```
-
-#### Step 3: Run the MCP Server
-
-See the [Running the MCP Server](#running-the-mcp-server) section below for detailed instructions.
-
-#### Complete One-Liner Workflow
-
-```bash
-# Clear database, repopulate, and run MCP server in sequence
-rm -rf ./chroma_db && \
-uv run python -c "
-from financial_rag.rag_pipeline import FinancialRag
-from pathlib import Path
-rag = FinancialRag()
-docs_path = Path('~/OneDrive/Documents/Finance/Financial History').expanduser()
-rag.ingest_documents(docs_path)
-print('✅ Database repopulated')
-" && \
-uv run python -m financial_rag.mcp_server
-```
-
-**Note:** The MCP server will continue running until you stop it (Ctrl+C). Make sure to restart Claude Desktop after stopping/starting the MCP server to ensure it connects properly.
-
 ## � Code Quality with Ruff
 
 This project uses [Ruff](https://docs.astral.sh/ruff/) for fast Python formatting and linting.
@@ -335,7 +263,7 @@ class TestMyFeature:
 
 ## �🖥️ Claude Desktop Integration (MCP)
 
-To use this directly from Claude Desktop:
+To use this directly from Claude Desktop, you need to configure the MCP server and then optionally set up a database refresh workflow.
 
 ### Option 1: Using Desktop Extensions (Easiest)
 
@@ -365,8 +293,10 @@ pwd  # (e.g., /Users/you/code/financial-rag)
     "financial-rag": {
       "command": "/absolute/path/to/.venv/bin/python",
       "args": ["-m", "financial_rag.mcp_server"],
+      "cwd": "/absolute/path/to/financial-rag",
       "env": {
-        "ANTHROPIC_API_KEY": "your-key-here"
+        "ANTHROPIC_API_KEY": "your-key-here",
+        "CHROMA_DB_PATH": "/absolute/path/to/financial-rag/chroma_db"
       }
     }
   }
@@ -381,17 +311,93 @@ pwd  # (e.g., /Users/you/code/financial-rag)
     "financial-rag": {
       "command": "/Users/belden/code/financial-rag/.venv/bin/python",
       "args": ["-m", "financial_rag.mcp_server"],
+      "cwd": "/Users/belden/code/financial-rag",
       "env": {
-        "ANTHROPIC_API_KEY": "sk-ant-your-key-here"
+        "ANTHROPIC_API_KEY": "sk-ant-your-key-here",
+        "CHROMA_DB_PATH": "/Users/belden/code/financial-rag/chroma_db"
       }
     }
   }
 }
 ```
 
+**Important:** Make sure to use absolute paths for `command`, `cwd`, and `CHROMA_DB_PATH` to avoid connection issues.
+
 4. Restart Claude Desktop
 
 5. You should see the financial RAG tools available in Claude Desktop!
+
+### Repopulating the Database and Running MCP Server
+
+If you want to clear all indexed documents and repopulate the database before running the MCP server, follow this workflow:
+
+#### Step 1: Clear the Existing Database
+
+```bash
+# Option 1: Delete the database directory (simplest)
+rm -rf ./chroma_db
+
+# Option 2: Clear programmatically
+uv run python -c "
+from financial_rag.rag_pipeline import FinancialRag
+rag = FinancialRag()
+rag.clear_database()
+print('✅ Database cleared')
+"
+```
+
+#### Step 2: Repopulate with Your Documents
+
+```bash
+# Option 1: Use the example script (interactive and guided)
+uv run python example.py
+# Follow the prompts to ingest your PDFs
+
+# Option 2: Ingest programmatically
+uv run python -c "
+from financial_rag.rag_pipeline import FinancialRag
+from pathlib import Path
+
+rag = FinancialRag()
+docs_path = Path('~/OneDrive/Documents/Finance/Financial History').expanduser()
+rag.ingest_documents(docs_path)
+print('✅ Documents ingested')
+"
+
+# Option 3: Ingest from a custom path
+uv run python -c "
+from financial_rag.rag_pipeline import FinancialRag
+from pathlib import Path
+
+rag = FinancialRag()
+docs_path = Path('/your/custom/path/to/documents').expanduser()
+rag.ingest_documents(docs_path)
+print('✅ Documents ingested')
+"
+```
+
+#### Step 3: Restart Claude Desktop
+
+Restart Claude Desktop to reconnect to the refreshed database.
+
+#### Complete One-Liner Workflow
+
+```bash
+# Clear database and repopulate in one command
+rm -rf ./chroma_db && \
+uv run python -c "
+from financial_rag.rag_pipeline import FinancialRag
+from pathlib import Path
+rag = FinancialRag()
+docs_path = Path('~/OneDrive/Documents/Finance/Financial History').expanduser()
+rag.ingest_documents(docs_path)
+print('✅ Database repopulated - Now restart Claude Desktop')
+"
+```
+
+After running this command, **restart Claude Desktop** to reconnect to the refreshed database.
+
+**Note:** The MCP server runs automatically when Claude Desktop starts (based on your config). You don't need to manually start it in a terminal.
 
 ## 📂 Auto-Sync New Documents
 
