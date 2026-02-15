@@ -355,8 +355,8 @@ def get_financial_summary(year: int) -> str:
     6. Top 3 expense categories
     7. Year-over-year comparison if data is available
     8. Key observations and recommendations
-    
-    Format this as an executive summary that gives a clear picture of 
+
+    Format this as an executive summary that gives a clear picture of
     the year's financial health."""
 
     try:
@@ -381,7 +381,7 @@ def get_database_stats() -> str:
         stats = rag.get_stats()
 
         return f"""📊 Financial RAG Database Statistics:
-        
+
 • Total document chunks indexed: {stats["total_chunks"]}
 • Database location: {stats["persist_directory"]}
 
