@@ -238,10 +238,10 @@ def compare_income_expenses(year: int, month: Optional[int] = None) -> str:
         period = str(year)
 
     question = f"""Compare my total income versus total expenses for {period}.
-    
+
     Please calculate and show:
     1. Total income
-    2. Total expenses  
+    2. Total expenses
     3. Net difference (income minus expenses)
     4. Savings rate as a percentage (if income > expenses)
     5. Brief analysis of the financial health for this period"""
@@ -281,13 +281,13 @@ def search_transactions(
     question = (
         " ".join(query_parts)
         + """
-    
+
     For each match, please show:
     - Date
     - Description
     - Amount
     - Category (if available)
-    
+
     Also provide a total sum of all matching transactions."""
     )
 
@@ -314,14 +314,14 @@ def get_expense_trends(category: str, num_months: int = 6) -> str:
         changed over time, with insights and patterns.
     """
     question = f"""Analyze my spending on "{category}" over the last {num_months} months.
-    
+
     Please provide:
     1. Monthly spending amounts for each month
     2. The trend direction (increasing, decreasing, or stable)
     3. Average monthly spending
     4. Highest and lowest months
     5. Any notable patterns or insights
-    
+
     Present the data in a clear, easy-to-understand format."""
 
     try:
@@ -345,7 +345,7 @@ def get_financial_summary(year: int) -> str:
         savings, and key insights.
     """
     question = f"""Provide a comprehensive financial summary for {year}.
-    
+
     Include:
     1. Total annual income (with breakdown by source if available)
     2. Total annual expenses (with breakdown by major categories)
