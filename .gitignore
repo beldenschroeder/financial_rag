@@ -42,7 +42,6 @@ file_watcher.log
 
 # IDE
 .idea/
-.vscode/
 *.swp
 *.swo
 *~
