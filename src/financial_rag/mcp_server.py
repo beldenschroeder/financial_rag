@@ -48,6 +48,23 @@ mcp = FastMCP("Financial RAG Server")
 # Lazy initialization of RAG (to avoid slow startup)
 _rag_instance = None
 
+# Constants
+MONTH_NAMES = [
+    "",
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
+]
+
 
 def get_rag():
     """Get or initialize the RAG instance."""
@@ -57,6 +74,34 @@ def get_rag():
 
         _rag_instance = FinancialRag()
     return _rag_instance
+
+
+def validate_month(month: int) -> Optional[str]:
+    """
+    Validate month number.
+
+    Args:
+        month: Month number to validate (should be 1-12)
+
+    Returns:
+        Error message string if invalid, None if valid
+    """
+    if not 1 <= month <= 12:
+        return "Invalid month. Please provide a number between 1 and 12."
+    return None
+
+
+def get_month_name(month: int) -> str:
+    """
+    Get month name from month number.
+
+    Args:
+        month: Month number (1-12)
+
+    Returns:
+        Month name (e.g., "January")
+    """
+    return MONTH_NAMES[month]
 
 
 @mcp.tool()
@@ -111,34 +156,19 @@ def get_monthly_expenses(year: int, month: int) -> str:
         A summary of all expenses for that month, organized by category
         if available, with totals.
     """
-    month_names = [
-        "",
-        "January",
-        "February",
-        "March",
-        "April",
-        "May",
-        "June",
-        "July",
-        "August",
-        "September",
-        "October",
-        "November",
-        "December",
-    ]
+    error = validate_month(month)
+    if error:
+        return error
 
-    if not 1 <= month <= 12:
-        return "Invalid month. Please provide a number between 1 and 12."
-
-    month_name = month_names[month]
+    month_name = get_month_name(month)
 
     question = f"""Please provide a detailed breakdown of all expenses for {month_name} {year}.
-    
+
     Include:
     1. All expense categories and their totals
     2. Any notable individual expenses
     3. The total sum of all expenses for the month
-    
+
     Format the response clearly with categories and amounts."""
 
     try:
@@ -161,29 +191,14 @@ def get_monthly_income(year: int, month: int) -> str:
     Returns:
         A summary of all income sources for that month.
     """
-    month_names = [
-        "",
-        "January",
-        "February",
-        "March",
-        "April",
-        "May",
-        "June",
-        "July",
-        "August",
-        "September",
-        "October",
-        "November",
-        "December",
-    ]
+    error = validate_month(month)
+    if error:
+        return error
 
-    if not 1 <= month <= 12:
-        return "Invalid month. Please provide a number between 1 and 12."
-
-    month_name = month_names[month]
+    month_name = get_month_name(month)
 
     question = f"""What was my total income for {month_name} {year}?
-    
+
     Please include:
     1. All income sources
     2. Individual amounts from each source
@@ -215,24 +230,10 @@ def compare_income_expenses(year: int, month: Optional[int] = None) -> str:
         - Savings rate percentage
     """
     if month:
-        month_names = [
-            "",
-            "January",
-            "February",
-            "March",
-            "April",
-            "May",
-            "June",
-            "July",
-            "August",
-            "September",
-            "October",
-            "November",
-            "December",
-        ]
-        if not 1 <= month <= 12:
-            return "Invalid month. Please provide a number between 1 and 12."
-        period = f"{month_names[month]} {year}"
+        error = validate_month(month)
+        if error:
+            return error
+        period = f"{get_month_name(month)} {year}"
     else:
         period = str(year)
 
