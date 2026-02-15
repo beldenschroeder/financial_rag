@@ -37,6 +37,7 @@ chroma_db/
 *.sqlite3
 
 # Logs
+logs/
 *.log
 file_watcher.log
 

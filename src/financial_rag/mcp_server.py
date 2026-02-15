@@ -12,6 +12,9 @@ To run as an MCP server:
     python -m financial_rag.mcp_server
 """
 
+import logging
+from logging.handlers import RotatingFileHandler
+from pathlib import Path
 from typing import Optional
 
 from dotenv import load_dotenv
@@ -19,6 +22,25 @@ from mcp.server.fastmcp import FastMCP
 
 # Load environment variables
 load_dotenv()
+
+# Configure logging to file (not stdout/stderr to avoid interfering with MCP protocol)
+log_dir = Path(__file__).parent.parent.parent / "logs"
+log_dir.mkdir(parents=True, exist_ok=True)
+log_file = log_dir / "mcp_server.log"
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    handlers=[
+        RotatingFileHandler(
+            log_file,
+            maxBytes=10 * 1024 * 1024,  # 10MB per file
+            backupCount=3,  # Keep 3 backup files (mcp_server.log.1, .2, .3)
+        ),
+    ],
+)
+
+logger = logging.getLogger(__name__)
 
 # Initialize the MCP server
 mcp = FastMCP("Financial RAG Server")

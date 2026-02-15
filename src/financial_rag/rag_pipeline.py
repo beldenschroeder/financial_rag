@@ -7,6 +7,7 @@ A RAG system for querying personal financial PDF documents using:
 - Claude for generation
 """
 
+import logging
 import os
 import re
 from abc import ABC, abstractmethod
@@ -28,6 +29,9 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 # Load environment variables from .env file
 load_dotenv()
+
+# Configure logging
+logger = logging.getLogger(__name__)
 
 
 class StatsDict(TypedDict):
@@ -331,7 +335,7 @@ class FinancialRag:
             max_tokens: Maximum tokens in Claude response
                        (env: MAX_TOKENS, default: 4096)
         """
-        print("🚀 Initializing Financial RAG Pipeline...")
+        logger.info("🚀 Initializing Financial RAG Pipeline...")
 
         # Load from environment or use defaults
         persist_directory = persist_directory or os.getenv("CHROMA_DB_PATH", "./chroma_db")
@@ -342,9 +346,9 @@ class FinancialRag:
         self.max_tokens = max_tokens or int(os.getenv("MAX_TOKENS", "4096"))
 
         # Initialize embeddings (free, runs locally on your Mac)
-        print(f"   Loading embedding model: {embedding_model}")
+        logger.info(f"   Loading embedding model: {embedding_model}")
         device = self._detect_device()
-        print(f"   Using device: {device}")
+        logger.info(f"   Using device: {device}")
         self.embeddings = HuggingFaceEmbeddings(
             model_name=embedding_model,
             model_kwargs={"device": device},
@@ -352,7 +356,7 @@ class FinancialRag:
         )
 
         # Initialize or load existing vector store
-        print(f"   Setting up vector store at: {persist_directory}")
+        logger.info(f"   Setting up vector store at: {persist_directory}")
         self.persist_directory = persist_directory
         self.vectorstore = Chroma(
             persist_directory=persist_directory,
@@ -369,7 +373,7 @@ class FinancialRag:
                 "   ANTHROPIC_API_KEY=your-key-here"
             )
 
-        print(f"   Connecting to Claude ({claude_model})")
+        logger.info(f"   Connecting to Claude ({claude_model})")
         self.llm = ChatAnthropic(
             model_name=claude_model,
             anthropic_api_key=api_key,  # type: ignore
@@ -384,7 +388,7 @@ class FinancialRag:
             search_kwargs={"k": 5},  # Return top 5 most relevant chunks
         )
 
-        print("✅ RAG Pipeline initialized successfully!\n")
+        logger.info("✅ RAG Pipeline initialized successfully!")
 
     def _detect_device(self) -> str:
         """
@@ -401,7 +405,7 @@ class FinancialRag:
         # Check for explicit environment variable first
         device_env = os.getenv("EMBEDDING_DEVICE")
         if device_env:
-            print(f"   Using device from EMBEDDING_DEVICE: {device_env}")
+            logger.info(f"   Using device from EMBEDDING_DEVICE: {device_env}")
             return device_env
 
         # Try to detect Apple Silicon
@@ -418,7 +422,7 @@ class FinancialRag:
                         import torch
 
                         if torch.backends.mps.is_available():
-                            print("   Apple Silicon detected, using MPS acceleration")
+                            logger.info("   Apple Silicon detected, using MPS acceleration")
                             return "mps"
                     except (ImportError, AttributeError):
                         # PyTorch not available or MPS not available
@@ -427,7 +431,7 @@ class FinancialRag:
             pass
 
         # Default to CPU for all other cases
-        print("   Using CPU (set EMBEDDING_DEVICE env var to override)")
+        logger.info("   Using CPU (set EMBEDDING_DEVICE env var to override)")
         return "cpu"
 
     def ingest_documents(self, documents_path: str, force_reingest: bool = False) -> int:
@@ -453,14 +457,14 @@ class FinancialRag:
         if not doc_path.exists():
             raise FileNotFoundError(f"❌ Directory not found: {doc_path}")
 
-        print(f"📂 Scanning for PDFs in: {doc_path}")
+        logger.info(f"📂 Scanning for PDFs in: {doc_path}")
 
         # Find all PDF files
         pdf_files = list(doc_path.rglob("*.pdf"))
-        print(f"   Found {len(pdf_files)} PDF files")
+        logger.info(f"   Found {len(pdf_files)} PDF files")
 
         if not pdf_files:
-            print("   ⚠️  No PDF files found!")
+            logger.warning("   ⚠️  No PDF files found!")
             return 0
 
         # Text splitter for chunking documents
@@ -476,7 +480,7 @@ class FinancialRag:
 
         for pdf_path in pdf_files:
             try:
-                print(f"   Processing: {pdf_path.name}")
+                logger.info(f"   Processing: {pdf_path.name}")
 
                 # Load PDF
                 loader = PyPDFLoader(str(pdf_path))
@@ -496,13 +500,13 @@ class FinancialRag:
                 processed_count += 1
 
             except Exception as e:
-                print(f"   ⚠️  Error processing {pdf_path.name}: {e}")
+                logger.error(f"   ⚠️  Error processing {pdf_path.name}: {e}")
                 continue
 
         if all_chunks:
-            print(f"\n📥 Adding {len(all_chunks)} chunks to vector store...")  # type: ignore
+            logger.info(f"📥 Adding {len(all_chunks)} chunks to vector store...")  # type: ignore
             self.vectorstore.add_documents(all_chunks)  # type: ignore
-            print(
+            logger.info(
                 f"✅ Successfully ingested {processed_count} documents ({len(all_chunks)} chunks)"  # type: ignore
             )
 
@@ -523,7 +527,7 @@ class FinancialRag:
         if not doc_path.exists():
             raise FileNotFoundError(f"❌ File not found: {doc_path}")
 
-        print(f"📄 Ingesting: {doc_path.name}")
+        logger.info(f"📄 Ingesting: {doc_path.name}")
 
         text_splitter: RecursiveCharacterTextSplitter = RecursiveCharacterTextSplitter(
             chunk_size=1000, chunk_overlap=200, length_function=len
@@ -540,7 +544,7 @@ class FinancialRag:
 
         if chunks:
             self.vectorstore.add_documents(chunks)
-            print(f"✅ Added {len(chunks)} chunks from {doc_path.name}")
+            logger.info(f"✅ Added {len(chunks)} chunks from {doc_path.name}")
 
         return len(chunks)
 
@@ -620,7 +624,7 @@ class FinancialRag:
         Returns:
             Dictionary with 'answer' and optionally 'sources'
         """
-        print(f"🔍 Query: {question}")
+        logger.info(f"🔍 Query: {question}")
 
         # 1. PARSE THE QUESTION (delegated to QuestionAnalyzer)
         analyzer = QuestionAnalyzer()
@@ -666,7 +670,7 @@ class FinancialRag:
             QueryResponseDict,
             {"answer": answer, "sources": sources},
         )
-        print(f"✅ Found {len(retrieved_docs)} relevant chunks")
+        logger.info(f"✅ Found {len(retrieved_docs)} relevant chunks")
         return response
 
     def _retrieve_with_priority(
@@ -769,7 +773,7 @@ class FinancialRag:
         Clear all documents from the vector store.
         Use with caution!
         """
-        print("⚠️  Clearing vector store...")
+        logger.warning("⚠️  Clearing vector store...")
         self.vectorstore.delete_collection()
         # Reinitialize empty collection
         self.vectorstore = Chroma(
@@ -777,7 +781,7 @@ class FinancialRag:
             embedding_function=self.embeddings,
             collection_name="financial_documents",
         )
-        print("✅ Vector store cleared")
+        logger.info("✅ Vector store cleared")
 
 
 def main():
